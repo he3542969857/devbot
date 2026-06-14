@@ -1,0 +1,478 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>DevBot - 智能评审平台</title>
+<script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<div id="app" v-cloak>
+
+  <!-- Toasts -->
+  <div class="toast-wrap">
+    <div v-for="(t, i) in toasts" :key="i" :class="'toast ' + (t.type||'info')">{{ t.message }}</div>
+  </div>
+
+  <!-- ===================== AUTH ===================== -->
+  <div v-if="!token" class="apple-auth-page">
+    <div class="apple-auth-card">
+      <div class="apple-auth-logo">DevBot</div>
+      <div class="apple-auth-subtitle">智能评审平台</div>
+      <form class="apple-auth-form" @submit.prevent="authTab==='login' ? doLogin() : doRegister()">
+        <input v-model="authForm.username" type="text" class="apple-input" :placeholder="authTab==='login' ? '用户名' : '设置用户名'" autocomplete="username">
+        <input v-model="authForm.password" type="password" class="apple-input" :placeholder="authTab==='login' ? '密码' : '设置密码'" autocomplete="current-password">
+        <button type="submit" class="apple-btn" :disabled="authLoading">
+          <span v-if="authLoading" class="apple-spinner"></span>
+          {{ authTab === 'login' ? '登录' : '注册' }}
+        </button>
+        <div class="apple-auth-toggle">
+          <span v-if="authTab==='login'" @click="authTab='register'">没有账号？创建账号</span>
+          <span v-else @click="authTab='login'">已有账号？登录</span>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- ===================== MAIN ===================== -->
+  <div v-else class="shell" :class="{'sidebar-open': sidebarOpen}">
+
+    <!-- Backdrop for mobile drawer -->
+    <div class="sidebar-backdrop" @click="sidebarOpen=false"></div>
+
+    <!-- Sidebar -->
+    <aside class="sidebar">
+      <div class="sidebar-head">
+        <div class="brand-mark">D</div>
+        <div>
+          <div class="brand-title">DevBot</div>
+          <div class="brand-sub">智能评审平台</div>
+        </div>
+      </div>
+
+      <div class="sidebar-section-title">工作台</div>
+
+      <div class="nav-items">
+        <div class="nav-item" :class="{active: currentPage==='review'}" @click="goPage('review')">
+          <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+          新建评审
+        </div>
+        <div class="nav-item" :class="{active: currentPage==='history'}" @click="goPage('history')">
+          <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+          评审历史
+        </div>
+        <div class="nav-item" :class="{active: currentPage==='github'}" @click="goPage('github')">
+          <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 19c-5 1.5-5-2.5-7-3m14 6v-3.87a3.37 3.37 0 0 0-.94-2.61c3.14-.35 6.44-1.54 6.44-7A5.44 5.44 0 0 0 20 4.77 5.07 5.07 0 0 0 19.91 1S18.73.65 16 2.48a13.38 13.38 0 0 0-7 0C6.27.65 5.09 1 5.09 1A5.07 5.07 0 0 0 5 4.77a5.44 5.44 0 0 0-1.5 3.78c0 5.42 3.3 6.61 6.44 7A3.37 3.37 0 0 0 9 18.13V22"/></svg>
+          GitHub 仓库
+        </div>
+        <div class="nav-item" :class="{active: currentPage==='webhook'}" @click="goPage('webhook')">
+          <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 16.08c-.76 0-1.44.3-1.96.77L8.91 12.7c.05-.23.09-.46.09-.7s-.04-.47-.09-.7l7.05-4.11c.54.5 1.25.81 2.04.81 1.66 0 3-1.34 3-3s-1.34-3-3-3-3 1.34-3 3c0 .24.04.47.09.7L8.04 9.81C7.5 9.31 6.79 9 6 9c-1.66 0-3 1.34-3 3s1.34 3 3 3c.79 0 1.5-.31 2.04-.81l7.12 4.16c-.05.21-.08.43-.08.65 0 1.61 1.31 2.92 2.92 2.92s2.92-1.31 2.92-2.92-1.31-2.92-2.92-2.92z"/></svg>
+          Webhook 设置
+        </div>
+      </div>
+
+      <div class="sidebar-foot">
+        <div class="avatar">{{ (username||'?').charAt(0).toUpperCase() }}</div>
+        <div class="user-info">
+          <div class="user-name">{{ username }}</div>
+          <div class="user-sub">已登录</div>
+        </div>
+        <button class="btn-icon" @click="doLogout" title="退出">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+        </button>
+      </div>
+    </aside>
+
+    <!-- Main -->
+    <main class="main">
+      <header class="topbar">
+        <button class="hamburger" @click="sidebarOpen=!sidebarOpen" :aria-label="sidebarOpen ? '关闭菜单' : '打开菜单'">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <line v-if="!sidebarOpen" x1="3" y1="6" x2="21" y2="6"/>
+            <line v-if="!sidebarOpen" x1="3" y1="12" x2="21" y2="12"/>
+            <line v-if="!sidebarOpen" x1="3" y1="18" x2="21" y2="18"/>
+            <line v-if="sidebarOpen" x1="18" y1="6" x2="6" y2="18"/>
+            <line v-if="sidebarOpen" x1="6" y1="6" x2="18" y2="18"/>
+          </svg>
+        </button>
+        <div class="crumb">
+          <span>DevBot</span>
+          <span>/</span>
+          <b>{{ pageLabel(currentPage) }}</b>
+        </div>
+        <div class="topbar-actions">
+          <a href="/platform/" class="platform-link">平台首页</a>
+          <a href="/codedoc/" class="platform-link">CodeDoc 知识库</a>
+        </div>
+      </header>
+
+      <div class="content">
+
+        <!-- ============= REVIEW PAGE ============= -->
+        <div v-if="currentPage==='review'">
+          <div class="detail-head">
+            <div class="detail-title-row">
+              <h1 class="detail-title">新建评审</h1>
+            </div>
+            <div class="detail-sub">提交代码 diff，DevBot 将调度多 Critic（正确性 / 设计 / 安全 / 可读性）并行评审</div>
+          </div>
+
+          <!-- Smart URL input — primary -->
+          <div class="url-input-card">
+            <label>粘贴 GitHub PR 链接</label>
+            <div class="url-input-row">
+              <input
+                v-model="reviewUrl"
+                class="url-input"
+                placeholder="https://github.com/owner/repo/pull/123 或 owner/repo#123"
+                @keydown.enter="fetchFromUrl"
+              />
+              <button class="btn-primary" @click="fetchFromUrl" :disabled="urlLoading">
+                <span v-if="urlLoading" class="apple-spinner" style="width:14px;height:14px;border-width:2px"></span>
+                {{ urlLoading ? '拉取中…' : '拉取 Diff' }}
+              </button>
+            </div>
+            <div class="url-hint">支持格式：PR 链接 / Commit 链接 / Compare 链接 / 简写 owner/repo#N</div>
+          </div>
+
+          <!-- After fetch: preview + start review -->
+          <div v-if="diffData" class="diff-preview-card">
+            <div class="diff-header">
+              <div style="flex:1;min-width:0">
+                <div class="diff-title">{{ diffData.title || '（无标题）' }}</div>
+                <div class="diff-meta">
+                  <span class="badge">{{ diffData.pr_id }}</span>
+                  <span>{{ diffData.stats.files }} 文件</span>
+                  <span class="added">+{{ diffData.stats.additions }}</span>
+                  <span class="removed">-{{ diffData.stats.deletions }}</span>
+                </div>
+              </div>
+              <a v-if="diffData.url" :href="diffData.url" target="_blank" class="link-icon" title="在 GitHub 中查看">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>
+                  <polyline points="15 3 21 3 21 9"/>
+                  <line x1="10" y1="14" x2="21" y2="3"/>
+                </svg>
+              </a>
+            </div>
+
+            <pre class="diff-preview">{{ diffData.diff.slice(0, 3000) }}{{ diffData.diff.length > 3000 ? '\n\n…（截断显示，提交后会评审全部）' : '' }}</pre>
+
+            <div class="review-actions">
+              <select v-model="diffData.language">
+                <option value="python">Python</option>
+                <option value="java">Java</option>
+                <option value="go">Go</option>
+                <option value="typescript">TypeScript</option>
+                <option value="javascript">JavaScript</option>
+                <option value="rust">Rust</option>
+                <option value="cpp">C++</option>
+                <option value="">自动检测</option>
+              </select>
+              <button class="btn-primary-large" @click="submitReview" :disabled="reviewing">
+                <span v-if="reviewing" class="apple-spinner" style="width:14px;height:14px;border-width:2px"></span>
+                {{ reviewing ? '评审进行中…' : '开始评审 →' }}
+              </button>
+            </div>
+          </div>
+
+          <!-- Advanced: manual paste / file upload (collapsed) -->
+          <details class="advanced-options">
+            <summary>高级选项（手动粘贴 Diff / 上传文件）</summary>
+            <div class="adv-body">
+              <div class="mode-tabs">
+                <button class="mode-tab" :class="{active:reviewMode==='manual'}" @click="reviewMode='manual'">手动粘贴</button>
+                <button class="mode-tab" :class="{active:reviewMode==='upload'}" @click="reviewMode='upload'">上传文件</button>
+              </div>
+
+              <div v-if="reviewMode==='upload'" class="field">
+                <input ref="diffFileInput" type="file" accept=".diff,.patch" style="display:none" @change="onDiffFilePicked">
+                <div class="drop-zone"
+                     :class="{'has-file': !!uploadedDiffFileName, dragging: diffDragOver}"
+                     @click="$refs.diffFileInput && $refs.diffFileInput.click()"
+                     @dragover.prevent="diffDragOver=true"
+                     @dragleave.prevent="diffDragOver=false"
+                     @drop.prevent="onDiffFileDropped">
+                  <svg v-if="!uploadedDiffFileName" class="drop-icon" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                    <polyline points="17 8 12 3 7 8"/>
+                    <line x1="12" y1="3" x2="12" y2="15"/>
+                  </svg>
+                  <div v-if="!uploadedDiffFileName" class="drop-text">拖拽 .diff / .patch 文件到此处或点击选择</div>
+                  <div v-if="!uploadedDiffFileName" class="drop-hint">（最大 5MB · 文件内容将自动填充到下方 diff 输入框）</div>
+                  <div v-else class="picked-file">
+                    <div class="picked-name">📄 {{ uploadedDiffFileName }}</div>
+                    <div class="picked-size">{{ uploadedDiffFileSize }}</div>
+                    <button class="picked-clear" @click.stop="clearDiffFile">移除</button>
+                  </div>
+                </div>
+              </div>
+
+              <div class="field" style="margin-top:14px">
+                <label class="field-label">Diff 内容</label>
+                <textarea v-model="reviewForm.diff" class="diff-input" placeholder="粘贴你的 diff 内容…"></textarea>
+                <div v-if="reviewForm.diff.trim()" style="margin-top:10px">
+                  <div style="font-size:12px;color:var(--text-3);margin-bottom:6px">📋 Diff 预览（语法高亮）</div>
+                  <div class="diff-viewer" style="max-height:280px;overflow:auto">
+                    <div v-for="(ln, i) in parseDiffLines(reviewForm.diff)" :key="i" class="diff-line" :class="ln.kind">
+                      <div class="ln">{{ ln.no || '' }}</div>
+                      <div class="code">{{ ln.text }}</div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div class="field-row">
+                <div>
+                  <label class="field-label">PR 标题（可选）</label>
+                  <input v-model="reviewForm.title" class="text-input" placeholder="PR 标题">
+                </div>
+                <div>
+                  <label class="field-label">主要语言</label>
+                  <select v-model="reviewForm.language" class="text-input">
+                    <option value="java">Java</option>
+                    <option value="python">Python</option>
+                    <option value="go">Go</option>
+                    <option value="typescript">TypeScript</option>
+                    <option value="javascript">JavaScript</option>
+                    <option value="rust">Rust</option>
+                    <option value="cpp">C++</option>
+                    <option value="">自动检测</option>
+                  </select>
+                </div>
+              </div>
+
+              <button @click="startReview" :disabled="reviewing" class="btn-primary btn-block" style="margin-top:8px">
+                <span v-if="reviewing" class="apple-spinner" style="width:14px;height:14px;border-width:2px"></span>
+                <svg v-else width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+                {{ reviewing ? '评审进行中…' : '使用此 Diff 评审' }}
+              </button>
+            </div>
+          </details>
+
+          <!-- Progress -->
+          <div v-if="taskId" class="card" style="margin-bottom:18px">
+            <div class="card-head">
+              <span class="card-head-title">⚙️ 评审进度</span>
+              <span class="tag" :class="{LOW:taskStatus==='done',MEDIUM:taskStatus==='running'||taskStatus==='queued',HIGH:taskStatus==='error'}">
+                {{ ({queued:'排队中',running:'评审中',done:'已完成',error:'出错'})[taskStatus] || taskStatus }}
+              </span>
+            </div>
+            <div class="card-body">
+              <div class="progress-grid">
+                <div v-for="c in criticNames" :key="c" class="progress-tile" :class="taskStatus==='done'?'done':(taskStatus==='running'?'running':'')">
+                  <span class="progress-dot" :class="taskStatus==='done'?'done':(taskStatus==='running'?'running':'waiting')"></span>
+                  <div>
+                    <div class="name">{{ criticLabels[c] }}</div>
+                    <div style="font-size:11px;color:var(--text-3);margin-top:2px">{{ criticIcons[c] }}-Critic</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Result -->
+          <div v-if="reviewResult">
+            <div class="dashboard">
+              <!-- Risk gauge -->
+              <div class="gauge-card">
+                <div class="gauge">
+                  <svg viewBox="0 0 200 200" width="180" height="180">
+                    
+                    <circle class="gauge-circle-bg" cx="100" cy="100" r="86"/>
+                    <circle class="gauge-circle" cx="100" cy="100" r="86"
+                      :stroke="riskGradientUrl(reviewResult.risk_score)"
+                      :stroke-dasharray="540"
+                      :stroke-dashoffset="540 - (540 * reviewResult.risk_score / 100)"/>
+                  </svg>
+                  <div class="gauge-center">
+                    <div class="gauge-num" :style="{background: riskGradient(reviewResult.risk_score), '-webkit-background-clip': 'text', 'background-clip': 'text', '-webkit-text-fill-color': 'transparent', color: 'transparent'}">{{ reviewResult.risk_score }}</div>
+                    <div class="gauge-divisor">/ 100 风险分</div>
+                  </div>
+                </div>
+                <div class="risk-pill" :class="reviewResult.risk_level">{{ riskLevelLabel(reviewResult.risk_level) }}</div>
+                <div class="gauge-summary">{{ reviewResult.summary }}</div>
+              </div>
+
+              <!-- Critics breakdown -->
+              <div class="critics-card">
+                <div class="critics-card-title">Critic 评估明细</div>
+                <div v-for="c in reviewResult.critics" :key="c.critic" class="critic-bar-row">
+                  <div class="critic-bar-head">
+                    <div class="critic-bar-name">
+                      <span class="critic-tag" :class="c.critic">{{ criticIcons[c.critic] }}</span>
+                      {{ criticLabels[c.critic] || c.critic }}
+                    </div>
+                    <span class="critic-bar-score" :style="{background: riskGradient(c.risk_score), '-webkit-background-clip': 'text', 'background-clip': 'text', '-webkit-text-fill-color': 'transparent', color: 'transparent'}">{{ c.risk_score }}</span>
+                  </div>
+                  <div class="critic-bar-track">
+                    <div class="critic-bar-fill" :style="{width: c.risk_score+'%', background: riskGradient(c.risk_score), boxShadow: '0 4px 12px -3px ' + riskColor(c.risk_score) + '55'}"></div>
+                  </div>
+                  <div class="critic-bar-foot">{{ c.model || '—' }} · {{ c.latency_ms }}ms · {{ (c.findings||[]).length }} 个发现</div>
+                </div>
+              </div>
+            </div>
+
+            <!-- All findings -->
+            <div class="findings-list" style="margin-bottom:20px">
+              <div class="findings-head">
+                <span class="findings-head-title">🔍 发现的问题</span>
+                <span class="findings-head-count">{{ totalFindings(reviewResult) }} 项</span>
+              </div>
+              <div v-if="totalFindings(reviewResult) === 0" class="empty">
+                <div class="empty-icon">✨</div>
+                <div class="empty-title">未发现明显问题</div>
+                <div class="empty-sub">各项 Critic 均未给出严重警告</div>
+              </div>
+              <template v-for="c in reviewResult.critics" :key="'cf-'+c.critic">
+                <div v-for="(f, fi) in (c.findings||[])" :key="c.critic+'-'+fi" class="finding">
+                  <span class="sev" :class="f.severity">{{ f.severity }}</span>
+                  <div class="finding-body">
+                    <div v-if="f.file" class="finding-file">{{ f.file }}{{ f.line ? ':' + f.line : '' }}</div>
+                    <div class="finding-msg">{{ f.message }}</div>
+                    <div class="finding-by">来自 {{ criticLabels[c.critic] || c.critic }} Critic</div>
+                  </div>
+                </div>
+              </template>
+            </div>
+
+            <!-- Suggestions -->
+            <div class="card">
+              <div class="card-head"><span class="card-head-title">💡 Critic 建议汇总</span></div>
+              <div class="card-body" style="padding:18px 22px">
+                <div v-for="c in reviewResult.critics" :key="'s-'+c.critic" style="margin-bottom:12px">
+                  <div style="display:flex;align-items:center;gap:8px;font-size:13px;font-weight:600;color:var(--text);margin-bottom:4px">
+                    <span class="critic-tag" :class="c.critic">{{ criticIcons[c.critic] }}</span>
+                    {{ criticLabels[c.critic] }}
+                  </div>
+                  <div class="suggestion" v-if="c.suggestion">{{ c.suggestion }}</div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+        </div>
+
+        <!-- ============= HISTORY PAGE ============= -->
+        <div v-if="currentPage==='history'">
+          <div class="detail-head">
+            <div class="detail-title-row">
+              <h1 class="detail-title">评审历史</h1>
+              <button @click="loadHistory" class="btn-secondary" style="margin-left:auto">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle;margin-right:4px"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+                刷新
+              </button>
+            </div>
+            <div class="detail-sub">所有提交过的代码评审记录</div>
+          </div>
+
+          <div class="card">
+            <div v-if="historyLoading" class="loading-block"><div class="spinner-lg"></div></div>
+            <div v-else-if="!historyItems.length" class="empty">
+              <div class="empty-icon">📜</div>
+              <div class="empty-title">还没有评审记录</div>
+              <div class="empty-sub">点击左侧"新建评审"开始</div>
+            </div>
+            <div v-else style="overflow-x:auto">
+              <table class="table">
+                <thead>
+                  <tr>
+                    <th class="sortable" @click="setSort('pr_id')">PR <span class="sort-ic">{{ sortKey==='pr_id' ? (sortAsc?'▲':'▼') : '↕' }}</span></th>
+                    <th class="sortable" @click="setSort('risk_level')">风险等级 <span class="sort-ic">{{ sortKey==='risk_level' ? (sortAsc?'▲':'▼') : '↕' }}</span></th>
+                    <th class="sortable" @click="setSort('risk_score')">评分 <span class="sort-ic">{{ sortKey==='risk_score' ? (sortAsc?'▲':'▼') : '↕' }}</span></th>
+                    <th>摘要</th>
+                    <th class="sortable" @click="setSort('created_at')">提交时间 <span class="sort-ic">{{ sortKey==='created_at' ? (sortAsc?'▲':'▼') : '↕' }}</span></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <template v-for="item in sortedHistory" :key="item.id">
+                    <tr :class="{expanded: expandedHistoryId === item.id}" @click="expandedHistoryId = expandedHistoryId === item.id ? null : item.id">
+                      <td data-label="PR" style="font-weight:500">{{ item.pr_id }}</td>
+                      <td data-label="风险"><span class="tag" :class="item.risk_level">{{ item.risk_level }}</span></td>
+                      <td data-label="评分" style="font-weight:800;font-size:14px" :style="{background: riskGradient(item.risk_score), '-webkit-background-clip': 'text', 'background-clip': 'text', '-webkit-text-fill-color': 'transparent', color: 'transparent'}">{{ item.risk_score }}</td>
+                      <td data-label="摘要" class="td-summary" style="color:var(--text-2);max-width:380px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ item.summary }}</td>
+                      <td data-label="提交时间" style="color:var(--text-3);font-size:12.5px">{{ formatDate(item.created_at) }}</td>
+                    </tr>
+                    <tr v-if="expandedHistoryId === item.id" class="expand-row">
+                      <td colspan="5">
+                        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px">
+                          <div v-for="c in item.critics" :key="c.critic" style="background:rgba(255,255,255,0.85);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);border:1px solid var(--border);border-radius:12px;padding:14px;box-shadow:0 4px 14px -8px rgba(99,102,241,0.15)">
+                            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+                              <div style="display:flex;align-items:center;gap:6px;font-size:13px;font-weight:600">
+                                <span class="critic-tag" :class="c.critic" style="width:18px;height:18px;font-size:10px">{{ criticIcons[c.critic] }}</span>
+                                {{ criticLabels[c.critic] || c.critic }}
+                              </div>
+                              <span style="font-weight:800;font-size:13px" :style="{background: riskGradient(c.risk_score), '-webkit-background-clip': 'text', 'background-clip': 'text', '-webkit-text-fill-color': 'transparent', color: 'transparent'}">{{ c.risk_score }}</span>
+                            </div>
+                            <div class="critic-bar-track"><div class="critic-bar-fill" :style="{width: c.risk_score+'%', background: riskGradient(c.risk_score)}"></div></div>
+                            <div style="margin-top:8px;font-size:12px;color:var(--text-2);line-height:1.6">{{ c.suggestion || '—' }}</div>
+                          </div>
+                        </div>
+                      </td>
+                    </tr>
+                  </template>
+                </tbody>
+              </table>
+              <div v-if="historyTotal > historyPageSize" class="pagination">
+                <span style="font-size:12px;color:var(--text-3)">共 {{ historyTotal }} 条 · 第 {{ historyPage }} / {{ Math.ceil(historyTotal/historyPageSize) }} 页</span>
+                <div class="pages">
+                  <button class="pg-btn" :disabled="historyPage<=1" @click="historyPage--; loadHistory()">上一页</button>
+                  <button class="pg-btn" :disabled="historyPage>=Math.ceil(historyTotal/historyPageSize)" @click="historyPage++; loadHistory()">下一页</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ============= WEBHOOK PAGE ============= -->
+        <div v-if="currentPage==='webhook'">
+          <div class="detail-head">
+            <div class="detail-title-row">
+              <h1 class="detail-title">Webhook 设置</h1>
+            </div>
+            <div class="detail-sub">配置 GitHub Webhook，让每次 PR 创建或更新都自动触发评审</div>
+          </div>
+
+          <div class="card" style="margin-bottom:18px">
+            <div class="card-head"><span class="card-head-title">📡 Webhook 地址</span></div>
+            <div class="card-body">
+              <div class="webhook-url-bar">
+                <span class="webhook-url-text">https://124.222.50.21/devbot/webhook/github</span>
+                <button @click="copyWebhookUrl" class="btn-secondary">复制</button>
+              </div>
+
+              <div style="margin-top:14px">
+                <div style="font-size:13.5px;font-weight:600;margin-bottom:10px">配置步骤</div>
+                <ol class="steps-list">
+                  <li v-for="(step, i) in webhookSteps" :key="i" v-html="step"></li>
+                </ol>
+              </div>
+
+              <div style="margin-top:18px;padding-top:18px;border-top:1px solid var(--border)">
+                <div style="font-size:13.5px;font-weight:600;margin-bottom:6px">连通性测试</div>
+                <div style="font-size:13px;color:var(--text-3);margin-bottom:12px">向 DevBot 发送测试请求，验证服务运行状态</div>
+                <button @click="testWebhook" :disabled="webhookTesting" class="btn-dark">
+                  <span v-if="webhookTesting" class="apple-spinner" style="width:13px;height:13px;border-width:2px"></span>
+                  {{ webhookTesting ? '测试中…' : '测试连接' }}
+                </button>
+                <div v-if="webhookTestResult" class="test-result" :class="webhookTestResult.ok?'ok':'fail'">
+                  <span v-if="webhookTestResult.ok">✓</span>
+                  <span v-else>✕</span>
+                  <span>{{ webhookTestResult.message }}</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </main>
+  </div>
+
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>
