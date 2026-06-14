@@ -1,0 +1,45 @@
+# Prompt 注册表元数据 —— 每个 prompt 名声明:
+#   active     : 默认版本(占 1 - canary_pct 流量)
+#   canary     : 灰度版本(占 canary_pct 流量)
+#   canary_pct : 灰度比例 0.0~1.0,按 hash(name+key) 确定性切分
+#   versions   : 版本号 -> 模板字符串(支持 {占位符},.format(**vars) 渲染)
+#
+# 灰度是确定性的:同一个 key(如 pr_id)总命中同一版本,便于复现与 A/B 归因。
+
+critic_security:
+  active: v2
+  canary: v3
+  canary_pct: 0.2
+  versions:
+    v1: |
+      You are a security reviewer. Find vulnerabilities in the diff.
+      PR: {title}
+      Diff:
+      {diff}
+    v2: |
+      You are the SECURITY reviewer ONLY. Report only security issues
+      (injection, authz gaps, secret exposure, insecure deserialization).
+      Always include a line number. Do not duplicate other reviewers.
+      PR: {title}
+      Diff:
+      {diff}
+    v3: |
+      You are the SECURITY reviewer ONLY. Use 'error' severity strictly for
+      exploitable vulnerabilities; potential/hardening issues are 'warn'.
+      Always cite a line number. Output JSON {{risk_score, confidence, findings, suggestion}}.
+      PR: {title}
+      Diff:
+      {diff}
+
+judge_relevance:
+  active: v1
+  canary: null
+  canary_pct: 0.0
+  versions:
+    v1: |
+      Rate how RELEVANT the review findings are to the actual diff, 0-5.
+      Output JSON {{relevance, actionability, novelty}}.
+      Diff:
+      {diff}
+      Review:
+      {review}

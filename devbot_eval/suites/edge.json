@@ -1,0 +1,104 @@
+[
+ {
+  "pr_id": "edge_001",
+  "title": "Empty no-op PR",
+  "language": "python",
+  "diff": "",
+  "ground_truth": {
+   "expected_risk_level": "low",
+   "expected_findings": [],
+   "notes": "clean"
+  }
+ },
+ {
+  "pr_id": "edge_002",
+  "title": "Reindent block and fix a comment typo",
+  "language": "python",
+  "diff": "--- a/app/util.py\n+++ b/app/util.py\n@@ -10,4 +10,4 @@ def normalize(values):\n-    # retrun the deduplicated list\n+    # return the deduplicated list\n     seen = set()\n-    result = [v for v in values if not (v in seen or seen.add(v))]\n+    result = [v for v in values if not (v in seen or seen.add(v))]\n     return result\n",
+  "ground_truth": {
+   "expected_risk_level": "low",
+   "expected_findings": [],
+   "notes": "clean - whitespace reindent and comment typo fix only, behavior unchanged"
+  }
+ },
+ {
+  "pr_id": "edge_003",
+  "title": "Update README installation steps",
+  "language": "python",
+  "diff": "--- a/README.md\n+++ b/README.md\n@@ -14,5 +14,7 @@ Install the dependencies with pip:\n ```\n pip install -r requirements.txt\n ```\n+\n+Then run `python -m app` to start the server on port 8080.\n \n See CONTRIBUTING.md for development setup.\n",
+  "ground_truth": {
+   "expected_risk_level": "low",
+   "expected_findings": [],
+   "notes": "clean - documentation-only markdown change, no code"
+  }
+ },
+ {
+  "pr_id": "edge_004",
+  "title": "Add bulk report export with many column formatters",
+  "language": "python",
+  "diff": "--- a/reports/export.py\n+++ b/reports/export.py\n@@ -40,5 +40,39 @@ class ReportExporter:\n     def _fmt_name(self, row):\n         return str(row.get(\"name\", \"\")).strip()\n \n+    def _fmt_email(self, row):\n+        return str(row.get(\"email\", \"\")).lower().strip()\n+\n+    def _fmt_phone(self, row):\n+        return str(row.get(\"phone\", \"\")).strip()\n+\n+    def _fmt_country(self, row):\n+        return str(row.get(\"country\", \"\")).upper().strip()\n+\n+    def _fmt_created(self, row):\n+        return row.get(\"created_at\").isoformat() if row.get(\"created_at\") else \"\"\n+\n+    def _fmt_amount(self, row):\n+        return f\"{row.get('amount', 0):.2f}\"\n+\n+    def _fmt_currency(self, row):\n+        return str(row.get(\"currency\", \"USD\")).upper()\n+\n+    def _fmt_status(self, row):\n+        return str(row.get(\"status\", \"pending\")).lower()\n+\n+    def _fmt_notes(self, row):\n+        return str(row.get(\"notes\", \"\")).replace(\"\\n\", \" \").strip()\n+\n+    def _fetch_rows(self, user_id):\n+        query = \"SELECT * FROM orders WHERE user_id = '\" + user_id + \"'\"\n+        return self.db.execute(query).fetchall()\n+\n+    def _fmt_tags(self, row):\n+        return \",\".join(sorted(row.get(\"tags\", [])))\n+\n+    def _fmt_id(self, row):\n+        return str(row.get(\"id\", \"\"))\n+\n     def export(self, rows):\n         return [self._fmt_name(r) for r in rows]\n",
+  "ground_truth": {
+   "expected_risk_level": "critical",
+   "expected_findings": [
+    {
+     "file": "reports/export.py",
+     "line": 68,
+     "severity": "error",
+     "message": "SQL injection: user_id is concatenated directly into the SQL string instead of using a parameterized query."
+    }
+   ],
+   "notes": "long diff of trivial formatter methods with one planted SQL injection in _fetch_rows deep in the hunk"
+  }
+ },
+ {
+  "pr_id": "edge_005",
+  "title": "Rename helper module to match package convention",
+  "language": "java",
+  "diff": "--- a/src/main/java/com/acme/Helpers.java\n+++ b/src/main/java/com/acme/StringHelpers.java\n@@ -1,4 +1,4 @@\n package com.acme;\n \n-public final class Helpers {\n+public final class StringHelpers {\n     private StringHelpers() {}\n",
+  "ground_truth": {
+   "expected_risk_level": "low",
+   "expected_findings": [],
+   "notes": "clean - rename-only change, class renamed to match file, no logic change"
+  }
+ },
+ {
+  "pr_id": "edge_006",
+  "title": "Localize greeting banner to support non-ASCII names",
+  "language": "python",
+  "diff": "--- a/ui/banner.py\n+++ b/ui/banner.py\n@@ -3,4 +3,4 @@ def greeting(name):\n-    return \"Hello, \" + name + \"!\"\n+    return f\"\\u4f60\\u597d\\uff0c{name}\\uff01 \\u3053\\u3093\\u306b\\u3061\\u306f\"\n \n def farewell(name):\n     return f\"Bye, {name}\"\n",
+  "ground_truth": {
+   "expected_risk_level": "low",
+   "expected_findings": [],
+   "notes": "clean - string literal changed to non-ASCII greeting, f-string interpolation is safe"
+  }
+ },
+ {
+  "pr_id": "edge_007",
+  "title": "Tweak HTTP client config for the staging environment",
+  "language": "java",
+  "diff": "--- a/src/main/resources/http-client.json\n+++ b/src/main/resources/http-client.json\n@@ -3,5 +3,7 @@\n   \"baseUrl\": \"https://api.staging.acme.com\",\n   \"connectTimeoutMs\": 5000,\n   \"readTimeoutMs\": 10000,\n+  \"verifyTlsCertificates\": false,\n+  \"maxRetries\": 3,\n   \"userAgent\": \"acme-client/2.1\"\n }\n",
+  "ground_truth": {
+   "expected_risk_level": "high",
+   "expected_findings": [
+    {
+     "file": "src/main/resources/http-client.json",
+     "line": 6,
+     "severity": "error",
+     "message": "Disabling TLS certificate verification exposes the client to man-in-the-middle attacks."
+    }
+   ],
+   "notes": "config change that disables TLS certificate verification (real security weakness); maxRetries addition is benign"
+  }
+ },
+ {
+  "pr_id": "edge_008",
+  "title": "Add unit test for slug normalization",
+  "language": "python",
+  "diff": "--- a/tests/test_slug.py\n+++ b/tests/test_slug.py\n@@ -8,2 +8,8 @@ def test_basic_slug():\n     assert slugify(\"Hello World\") == \"hello-world\"\n \n+def test_slug_trims_and_collapses():\n+    assert slugify(\"  Foo   Bar  \") == \"foo-bar\"\n+    assert slugify(\"Already-Slug\") == \"already-slug\"\n+\n+def test_slug_handles_empty():\n+    assert slugify(\"\") == \"\"\n",
+  "ground_truth": {
+   "expected_risk_level": "low",
+   "expected_findings": [],
+   "notes": "clean - test-only additions, no production code affected"
+  }
+ }
+]

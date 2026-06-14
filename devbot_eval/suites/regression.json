@@ -1,0 +1,450 @@
+[
+ {
+  "pr_id": "regression_001",
+  "title": "Look up user by name in admin search",
+  "language": "java",
+  "diff": "--- a/src/main/java/com/acme/admin/UserDao.java\n+++ b/src/main/java/com/acme/admin/UserDao.java\n@@ -40,6 +40,11 @@ public class UserDao {\n     public User findByName(String name) {\n+        String sql = \"SELECT * FROM users WHERE name = '\" + name + \"'\";\n+        Statement st = conn.createStatement();\n+        ResultSet rs = st.executeQuery(sql);\n+        if (rs.next()) {\n+            return mapRow(rs);\n+        }\n         return null;\n     }",
+  "ground_truth": {
+   "expected_risk_level": "critical",
+   "expected_findings": [
+    {
+     "file": "src/main/java/com/acme/admin/UserDao.java",
+     "line": 41,
+     "severity": "error",
+     "message": "User input is concatenated directly into SQL, allowing SQL injection."
+    }
+   ],
+   "notes": "Planted: SQL injection via string concatenation; should use PreparedStatement."
+  }
+ },
+ {
+  "pr_id": "regression_002",
+  "title": "Add helper to format display name",
+  "language": "java",
+  "diff": "--- a/src/main/java/com/acme/util/NameFormatter.java\n+++ b/src/main/java/com/acme/util/NameFormatter.java\n@@ -8,4 +8,9 @@ public final class NameFormatter {\n     public static String fullName(String first, String last) {\n+        if (first == null) {\n+            first = \"\";\n+        }\n+        if (last == null) {\n+            last = \"\";\n+        }\n         return (first + \" \" + last).trim();\n     }",
+  "ground_truth": {
+   "expected_risk_level": "low",
+   "expected_findings": [],
+   "notes": "clean"
+  }
+ },
+ {
+  "pr_id": "regression_003",
+  "title": "Read config file contents",
+  "language": "python",
+  "diff": "--- a/app/config_loader.py\n+++ b/app/config_loader.py\n@@ -12,5 +12,9 @@ class ConfigLoader:\n     def load(self, path):\n-        return {}\n+        f = open(path, \"r\")\n+        data = f.read()\n+        parsed = self._parse(data)\n+        return parsed",
+  "ground_truth": {
+   "expected_risk_level": "high",
+   "expected_findings": [
+    {
+     "file": "app/config_loader.py",
+     "line": 13,
+     "severity": "warn",
+     "message": "File handle is opened but never closed; leaks the descriptor, especially if _parse raises."
+    }
+   ],
+   "notes": "Planted: resource leak (file not closed, no context manager)."
+  }
+ },
+ {
+  "pr_id": "regression_004",
+  "title": "Hash session token before storing",
+  "language": "python",
+  "diff": "--- a/app/auth/tokens.py\n+++ b/app/auth/tokens.py\n@@ -3,5 +3,8 @@ import hashlib\n \n def store_token(token, store):\n-    store.put(token)\n+    digest = hashlib.md5(token.encode()).hexdigest()\n+    store.put(digest)\n+    return digest",
+  "ground_truth": {
+   "expected_risk_level": "high",
+   "expected_findings": [
+    {
+     "file": "app/auth/tokens.py",
+     "line": 5,
+     "severity": "error",
+     "message": "MD5 is cryptographically broken and unsuitable for hashing security tokens."
+    }
+   ],
+   "notes": "Planted: weak crypto (MD5) used for a security token."
+  }
+ },
+ {
+  "pr_id": "regression_005",
+  "title": "Compute average of scores",
+  "language": "python",
+  "diff": "--- a/app/stats.py\n+++ b/app/stats.py\n@@ -5,3 +5,6 @@ def total(scores):\n     return sum(scores)\n+\n+def average(scores):\n+    return sum(scores) / len(scores)",
+  "ground_truth": {
+   "expected_risk_level": "medium",
+   "expected_findings": [
+    {
+     "file": "app/stats.py",
+     "line": 8,
+     "severity": "warn",
+     "message": "Division by len(scores) raises ZeroDivisionError when scores is empty."
+    }
+   ],
+   "notes": "Planted: missing empty-input guard causes ZeroDivisionError."
+  }
+ },
+ {
+  "pr_id": "regression_006",
+  "title": "Append item to cart",
+  "language": "java",
+  "diff": "--- a/src/main/java/com/acme/cart/Cart.java\n+++ b/src/main/java/com/acme/cart/Cart.java\n@@ -15,4 +15,8 @@ public class Cart {\n     private final List<Item> items = new ArrayList<>();\n \n+    public void add(Item item) {\n+        items.add(item);\n+    }\n+\n     public int size() {\n         return items.size();\n     }",
+  "ground_truth": {
+   "expected_risk_level": "low",
+   "expected_findings": [],
+   "notes": "clean"
+  }
+ },
+ {
+  "pr_id": "regression_007",
+  "title": "Get last element of buffer",
+  "language": "java",
+  "diff": "--- a/src/main/java/com/acme/io/RingBuffer.java\n+++ b/src/main/java/com/acme/io/RingBuffer.java\n@@ -22,4 +22,8 @@ public class RingBuffer {\n     private final int[] data;\n     private int count;\n \n+    public int last() {\n+        return data[count];\n+    }\n+\n     public boolean isEmpty() {\n         return count == 0;\n     }",
+  "ground_truth": {
+   "expected_risk_level": "high",
+   "expected_findings": [
+    {
+     "file": "src/main/java/com/acme/io/RingBuffer.java",
+     "line": 26,
+     "severity": "warn",
+     "message": "Off-by-one: last valid index is count-1, so data[count] reads past the filled region or out of bounds."
+    }
+   ],
+   "notes": "Planted: off-by-one indexing error (should be count-1)."
+  }
+ },
+ {
+  "pr_id": "regression_008",
+  "title": "Accumulate log lines per request",
+  "language": "python",
+  "diff": "--- a/app/logger.py\n+++ b/app/logger.py\n@@ -7,4 +7,8 @@ class RequestLogger:\n+    def record(self, msg, sink=[]):\n+        sink.append(msg)\n+        return sink\n+\n     def flush(self):\n         pass",
+  "ground_truth": {
+   "expected_risk_level": "medium",
+   "expected_findings": [
+    {
+     "file": "app/logger.py",
+     "line": 7,
+     "severity": "warn",
+     "message": "Mutable default argument is shared across calls, accumulating state between unrelated requests."
+    }
+   ],
+   "notes": "Planted: mutable default argument (shared list)."
+  }
+ },
+ {
+  "pr_id": "regression_009",
+  "title": "Expose order total accessor",
+  "language": "java",
+  "diff": "--- a/src/main/java/com/acme/order/Order.java\n+++ b/src/main/java/com/acme/order/Order.java\n@@ -30,4 +30,8 @@ public class Order {\n     private final BigDecimal total;\n \n+    public BigDecimal getTotal() {\n+        return total;\n+    }\n+\n     public String getId() {\n         return id;\n     }",
+  "ground_truth": {
+   "expected_risk_level": "low",
+   "expected_findings": [],
+   "notes": "clean"
+  }
+ },
+ {
+  "pr_id": "regression_010",
+  "title": "Process payment, notify, and audit in one step",
+  "language": "java",
+  "diff": "--- a/src/main/java/com/acme/billing/PaymentService.java\n+++ b/src/main/java/com/acme/billing/PaymentService.java\n@@ -18,6 +18,21 @@ public class PaymentService {\n     public void handle(Order order) {\n+        gateway.charge(order.getCard(), order.getTotal());\n+        order.setStatus(\"PAID\");\n+        repo.save(order);\n+        emailClient.send(order.getEmail(), \"Receipt\", buildReceipt(order));\n+        smsClient.send(order.getPhone(), \"Payment received\");\n+        auditLog.write(order.getId(), \"charged\");\n+        analytics.track(\"payment\", order.getId());\n+        inventory.decrement(order.getItems());\n+        loyalty.addPoints(order.getCustomerId(), order.getTotal());\n+        warehouse.queueShipment(order.getId());\n     }",
+  "ground_truth": {
+   "expected_risk_level": "medium",
+   "expected_findings": [
+    {
+     "file": "src/main/java/com/acme/billing/PaymentService.java",
+     "line": 28,
+     "severity": "warn",
+     "message": "God method: payment, email, SMS, audit, analytics, inventory, loyalty, and shipping are all crammed into one method, violating SRP."
+    }
+   ],
+   "notes": "Planted: god method / SRP violation (too many responsibilities in one method)."
+  }
+ },
+ {
+  "pr_id": "regression_011",
+  "title": "Decode user record fields",
+  "language": "python",
+  "diff": "--- a/app/client.py\n+++ b/app/client.py\n@@ -10,4 +10,9 @@ class ApiClient:\n     def get_user(self, uid):\n         d = requests.get(self.base + \"/users/\" + str(uid)).json()\n+        x = d[\"first_name\"]\n+        y = d[\"last_name\"]\n+        z = d[\"email_addr\"]\n+        return (x, y, z)\n+\n     def close(self):\n         self.session.close()",
+  "ground_truth": {
+   "expected_risk_level": "medium",
+   "expected_findings": [
+    {
+     "file": "app/client.py",
+     "line": 12,
+     "severity": "info",
+     "message": "Single-letter names x, y, z hide that these are first name, last name, and email."
+    }
+   ],
+   "notes": "Planted: unclear naming (x/y/z for named fields). Cosmetic only."
+  }
+ },
+ {
+  "pr_id": "regression_012",
+  "title": "Build greeting from profile",
+  "language": "java",
+  "diff": "--- a/src/main/java/com/acme/profile/Greeter.java\n+++ b/src/main/java/com/acme/profile/Greeter.java\n@@ -12,4 +12,8 @@ public class Greeter {\n     public String greet(Profile p) {\n+        return \"Hello, \" + p.getNickname().toUpperCase();\n+    }\n+\n     public String farewell(Profile p) {\n         return \"Bye\";\n     }",
+  "ground_truth": {
+   "expected_risk_level": "high",
+   "expected_findings": [
+    {
+     "file": "src/main/java/com/acme/profile/Greeter.java",
+     "line": 13,
+     "severity": "warn",
+     "message": "getNickname() may return null (nickname is optional), so toUpperCase() can throw NullPointerException."
+    }
+   ],
+   "notes": "Planted: null dereference on a reachable path (optional nickname)."
+  }
+ },
+ {
+  "pr_id": "regression_013",
+  "title": "Run query with prepared statement",
+  "language": "java",
+  "diff": "--- a/src/main/java/com/acme/repo/AccountRepo.java\n+++ b/src/main/java/com/acme/repo/AccountRepo.java\n@@ -28,6 +28,12 @@ public class AccountRepo {\n     public Account findById(long id) throws SQLException {\n+        String sql = \"SELECT * FROM accounts WHERE id = ?\";\n+        try (PreparedStatement ps = conn.prepareStatement(sql)) {\n+            ps.setLong(1, id);\n+            try (ResultSet rs = ps.executeQuery()) {\n+                return rs.next() ? mapRow(rs) : null;\n+            }\n+        }\n     }",
+  "ground_truth": {
+   "expected_risk_level": "low",
+   "expected_findings": [],
+   "notes": "clean"
+  }
+ },
+ {
+  "pr_id": "regression_014",
+  "title": "Parse port from env",
+  "language": "python",
+  "diff": "--- a/app/settings.py\n+++ b/app/settings.py\n@@ -4,3 +4,7 @@ import os\n \n def get_port():\n-    return 8080\n+    raw = os.environ[\"PORT\"]\n+    return int(raw)",
+  "ground_truth": {
+   "expected_risk_level": "medium",
+   "expected_findings": [
+    {
+     "file": "app/settings.py",
+     "line": 6,
+     "severity": "warn",
+     "message": "Missing error handling: direct subscript raises KeyError when PORT is unset instead of falling back to a default."
+    }
+   ],
+   "notes": "Planted: missing error handling on environment lookup (KeyError)."
+  }
+ },
+ {
+  "pr_id": "regression_015",
+  "title": "Add x and y coordinates",
+  "language": "python",
+  "diff": "--- a/app/geometry.py\n+++ b/app/geometry.py\n@@ -1,3 +1,7 @@ \n def add_points(a, b):\n-    pass\n+    return (a[0] + b[0], a[1] + b[1])\n+\n+def origin():\n+    return (0, 0)",
+  "ground_truth": {
+   "expected_risk_level": "low",
+   "expected_findings": [],
+   "notes": "clean"
+  }
+ },
+ {
+  "pr_id": "regression_016",
+  "title": "Refactor temp variable in price calc",
+  "language": "java",
+  "diff": "--- a/src/main/java/com/acme/pricing/Calc.java\n+++ b/src/main/java/com/acme/pricing/Calc.java\n@@ -9,4 +9,9 @@ public class Calc {\n     public double withTax(double net, double rate) {\n+        double a = net * rate;\n+        double b = net + a;\n+        return b;\n+    }\n+\n     public double rounded(double v) {\n         return Math.round(v * 100) / 100.0;\n     }",
+  "ground_truth": {
+   "expected_risk_level": "medium",
+   "expected_findings": [
+    {
+     "file": "src/main/java/com/acme/pricing/Calc.java",
+     "line": 10,
+     "severity": "info",
+     "message": "Single-letter variables a and b obscure that they are the tax amount and gross total."
+    }
+   ],
+   "notes": "Planted: unclear naming (a/b instead of tax/gross). Cosmetic only."
+  }
+ },
+ {
+  "pr_id": "regression_017",
+  "title": "Render template with user comment",
+  "language": "python",
+  "diff": "--- a/app/views.py\n+++ b/app/views.py\n@@ -14,4 +14,8 @@ def comment_page(request):\n     comment = request.GET.get(\"c\", \"\")\n-    return render(\"comment.html\", {})\n+    html = \"<div>\" + comment + \"</div>\"\n+    return HttpResponse(html)",
+  "ground_truth": {
+   "expected_risk_level": "critical",
+   "expected_findings": [
+    {
+     "file": "app/views.py",
+     "line": 15,
+     "severity": "error",
+     "message": "Unescaped user input is written into HTML, enabling reflected XSS."
+    }
+   ],
+   "notes": "Planted: reflected XSS via unescaped user comment."
+  }
+ },
+ {
+  "pr_id": "regression_018",
+  "title": "Cache computed factorial",
+  "language": "python",
+  "diff": "--- a/app/math_utils.py\n+++ b/app/math_utils.py\n@@ -2,4 +2,9 @@ from functools import lru_cache\n \n+@lru_cache(maxsize=128)\n+def factorial(n):\n+    if n <= 1:\n+        return 1\n+    return n * factorial(n - 1)",
+  "ground_truth": {
+   "expected_risk_level": "low",
+   "expected_findings": [],
+   "notes": "clean"
+  }
+ },
+ {
+  "pr_id": "regression_019",
+  "title": "Close socket after send",
+  "language": "java",
+  "diff": "--- a/src/main/java/com/acme/net/Sender.java\n+++ b/src/main/java/com/acme/net/Sender.java\n@@ -16,5 +16,10 @@ public class Sender {\n     public void send(byte[] payload) throws IOException {\n-        return;\n+        Socket sock = new Socket(host, port);\n+        OutputStream out = sock.getOutputStream();\n+        out.write(payload);\n+        out.flush();\n+        sock.close();\n     }",
+  "ground_truth": {
+   "expected_risk_level": "high",
+   "expected_findings": [
+    {
+     "file": "src/main/java/com/acme/net/Sender.java",
+     "line": 17,
+     "severity": "warn",
+     "message": "Socket is closed only on the happy path; an exception during write leaks the connection. Use try-with-resources."
+    }
+   ],
+   "notes": "Planted: resource leak (socket not closed on exception path)."
+  }
+ },
+ {
+  "pr_id": "regression_020",
+  "title": "Extract domain from email",
+  "language": "java",
+  "diff": "--- a/src/main/java/com/acme/validate/EmailCheck.java\n+++ b/src/main/java/com/acme/validate/EmailCheck.java\n@@ -6,4 +6,8 @@ public class EmailCheck {\n     private static final Pattern P = Pattern.compile(\"^[^@]+@[^@]+\\\\.[^@]+$\");\n \n+    public String domainOf(String email) {\n+        int at = email.indexOf('@');\n+        return email.substring(at + 1);\n+    }\n+\n     public boolean isError(int code) {\n         return code >= 400;\n     }",
+  "ground_truth": {
+   "expected_risk_level": "medium",
+   "expected_findings": [
+    {
+     "file": "src/main/java/com/acme/validate/EmailCheck.java",
+     "line": 9,
+     "severity": "warn",
+     "message": "When email has no '@', indexOf returns -1 and substring(0) silently returns the whole string instead of a domain."
+    }
+   ],
+   "notes": "Planted: unhandled no-'@' case yields a wrong (whole-string) result."
+  }
+ },
+ {
+  "pr_id": "regression_021",
+  "title": "Delete file matching path",
+  "language": "python",
+  "diff": "--- a/app/files.py\n+++ b/app/files.py\n@@ -8,4 +8,8 @@ import os\n \n def remove_user_file(name):\n-    pass\n+    path = \"/data/uploads/\" + name\n+    os.system(\"rm -rf \" + path)",
+  "ground_truth": {
+   "expected_risk_level": "critical",
+   "expected_findings": [
+    {
+     "file": "app/files.py",
+     "line": 11,
+     "severity": "error",
+     "message": "Unsanitized user-controlled name is interpolated into a shell command, allowing command injection."
+    }
+   ],
+   "notes": "Planted: OS command injection via os.system with concatenated input."
+  }
+ },
+ {
+  "pr_id": "regression_022",
+  "title": "Convert temperature units",
+  "language": "python",
+  "diff": "--- a/app/temperature.py\n+++ b/app/temperature.py\n@@ -1,2 +1,6 @@ \n def c_to_f(c):\n     return c * 9 / 5 + 32\n+\n+def f_to_c(f):\n+    return (f - 32) * 5 // 9",
+  "ground_truth": {
+   "expected_risk_level": "medium",
+   "expected_findings": [
+    {
+     "file": "app/temperature.py",
+     "line": 5,
+     "severity": "warn",
+     "message": "Floor division // truncates the fractional part, producing wrong Celsius values (e.g. 70F -> 21 instead of 21.1)."
+    }
+   ],
+   "notes": "Planted: integer floor division loses precision in unit conversion."
+  }
+ },
+ {
+  "pr_id": "regression_023",
+  "title": "Index into results list",
+  "language": "java",
+  "diff": "--- a/src/main/java/com/acme/search/Results.java\n+++ b/src/main/java/com/acme/search/Results.java\n@@ -18,5 +18,10 @@ public class Results {\n     public Hit topN(int n) {\n         List<Hit> hits = query();\n-        return hits.get(0);\n+        for (int i = 0; i <= n; i++) {\n+            if (hits.get(i).score() > 0.9) {\n+                return hits.get(i);\n+            }\n+        }\n+        return null;\n     }",
+  "ground_truth": {
+   "expected_risk_level": "high",
+   "expected_findings": [
+    {
+     "file": "src/main/java/com/acme/search/Results.java",
+     "line": 20,
+     "severity": "warn",
+     "message": "Loop condition i <= n iterates one past the requested count and can index beyond the list size, throwing IndexOutOfBoundsException."
+    }
+   ],
+   "notes": "Planted: off-by-one loop bound (<= n) risking out-of-bounds access."
+  }
+ },
+ {
+  "pr_id": "regression_024",
+  "title": "Toggle feature flag in cache",
+  "language": "python",
+  "diff": "--- a/app/flags.py\n+++ b/app/flags.py\n@@ -6,4 +6,8 @@ class FlagCache:\n     def __init__(self):\n         self._flags = {}\n \n+    def set(self, key, value):\n+        self._flags[key] = bool(value)\n+\n     def get(self, key):\n         return self._flags.get(key, False)",
+  "ground_truth": {
+   "expected_risk_level": "low",
+   "expected_findings": [],
+   "notes": "clean"
+  }
+ },
+ {
+  "pr_id": "regression_025",
+  "title": "Verify password against stored hash",
+  "language": "python",
+  "diff": "--- a/app/auth/password.py\n+++ b/app/auth/password.py\n@@ -10,5 +10,9 @@ class PasswordChecker:\n     def verify(self, supplied, stored_hash):\n-        return False\n+        computed = self._hash(supplied)\n+        if computed == stored_hash:\n+            return True\n+        return False",
+  "ground_truth": {
+   "expected_risk_level": "high",
+   "expected_findings": [
+    {
+     "file": "app/auth/password.py",
+     "line": 12,
+     "severity": "warn",
+     "message": "Non-constant-time == comparison of password hashes leaks timing information; use a constant-time compare."
+    }
+   ],
+   "notes": "Planted: timing-unsafe equality comparison of secret hashes."
+  }
+ },
+ {
+  "pr_id": "regression_026",
+  "title": "Map status code to label",
+  "language": "java",
+  "diff": "--- a/src/main/java/com/acme/http/StatusLabel.java\n+++ b/src/main/java/com/acme/http/StatusLabel.java\n@@ -5,4 +5,12 @@ public class StatusLabel {\n     public String label(int code) {\n+        switch (code) {\n+            case 200: return \"OK\";\n+            case 404: return \"Not Found\";\n+            case 500: return \"Server Error\";\n+            default:  return \"Unknown\";\n+        }\n+    }\n+\n     public boolean isError(int code) {\n         return code >= 400;\n     }",
+  "ground_truth": {
+   "expected_risk_level": "low",
+   "expected_findings": [],
+   "notes": "clean"
+  }
+ },
+ {
+  "pr_id": "regression_027",
+  "title": "Load and deserialize cached object",
+  "language": "python",
+  "diff": "--- a/app/cache_store.py\n+++ b/app/cache_store.py\n@@ -3,5 +3,9 @@ import pickle\n \n def load(self, blob):\n-    return None\n+    obj = pickle.loads(blob)\n+    return obj",
+  "ground_truth": {
+   "expected_risk_level": "critical",
+   "expected_findings": [
+    {
+     "file": "app/cache_store.py",
+     "line": 5,
+     "severity": "error",
+     "message": "Deserializing untrusted bytes with pickle.loads can execute arbitrary code."
+    }
+   ],
+   "notes": "Planted: insecure deserialization via pickle.loads on untrusted data."
+  }
+ },
+ {
+  "pr_id": "regression_028",
+  "title": "Track retry count and do everything on failure",
+  "language": "java",
+  "diff": "--- a/src/main/java/com/acme/job/JobRunner.java\n+++ b/src/main/java/com/acme/job/JobRunner.java\n@@ -25,6 +25,18 @@ public class JobRunner {\n     public void onFailure(Job j, Exception e) {\n+        int n = j.getRetries();\n+        metrics.increment(\"failures\");\n+        logger.error(\"job failed\", e);\n+        alerting.page(\"oncall\", j.getId());\n+        repo.markFailed(j.getId());\n+        deadLetterQueue.push(j);\n+        emailClient.send(j.getOwner(), \"Job failed\", e.getMessage());\n+        slack.post(\"#alerts\", j.getId() + \" failed\");\n+        scheduler.reschedule(j, n + 1);\n+        cache.evict(j.getId());\n     }",
+  "ground_truth": {
+   "expected_risk_level": "medium",
+   "expected_findings": [
+    {
+     "file": "src/main/java/com/acme/job/JobRunner.java",
+     "line": 33,
+     "severity": "warn",
+     "message": "God method: metrics, logging, paging, persistence, dead-lettering, email, Slack, rescheduling, and cache eviction are all handled inline, violating SRP."
+    }
+   ],
+   "notes": "Planted: god method / SRP violation (failure handler does too many things)."
+  }
+ }
+]

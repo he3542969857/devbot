@@ -1,0 +1,222 @@
+[
+ {
+  "pr_id": "adversarial_001",
+  "title": "Hash password reset tokens before storing",
+  "language": "java",
+  "diff": "--- a/src/main/java/com/acme/auth/TokenStore.java\n+++ b/src/main/java/com/acme/auth/TokenStore.java\n@@ -18,7 +18,9 @@ public class TokenStore {\n \n     public String fingerprint(String token) {\n-        return token;\n+        MessageDigest md = MessageDigest.getInstance(\"MD5\");\n+        byte[] digest = md.digest(token.getBytes(StandardCharsets.UTF_8));\n+        return HexFormat.of().formatHex(digest);\n     }\n }",
+  "ground_truth": {
+   "expected_risk_level": "high",
+   "expected_findings": [
+    {
+     "file": "src/main/java/com/acme/auth/TokenStore.java",
+     "line": 20,
+     "severity": "error",
+     "message": "MD5 is a broken hash and must not be used to fingerprint security tokens."
+    }
+   ],
+   "notes": "Planted weak crypto: MD5 used to hash password-reset tokens."
+  }
+ },
+ {
+  "pr_id": "adversarial_002",
+  "title": "Verify upload checksum with SHA-1",
+  "language": "python",
+  "diff": "--- a/app/security/signing.py\n+++ b/app/security/signing.py\n@@ -9,6 +9,8 @@ import hashlib\n \n def signature(secret: bytes, payload: bytes) -> str:\n-    raise NotImplementedError\n+    mac = hashlib.sha1(secret + payload)\n+    return mac.hexdigest()\n \n def verify(secret, payload, sig):\n     return signature(secret, payload) == sig",
+  "ground_truth": {
+   "expected_risk_level": "high",
+   "expected_findings": [
+    {
+     "file": "app/security/signing.py",
+     "line": 11,
+     "severity": "error",
+     "message": "SHA-1 secret-prefix construction is a broken MAC vulnerable to length-extension and collisions."
+    }
+   ],
+   "notes": "Planted weak crypto: SHA-1 used as a message authentication code for signing."
+  }
+ },
+ {
+  "pr_id": "adversarial_003",
+  "title": "Write pid file only if it does not exist",
+  "language": "python",
+  "diff": "--- a/daemon/lockfile.py\n+++ b/daemon/lockfile.py\n@@ -12,7 +12,9 @@ import os\n \n def acquire(path):\n-    fd = os.open(path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)\n-    os.write(fd, str(os.getpid()).encode())\n+    if not os.path.exists(path):\n+        with open(path, \"w\") as f:\n+            f.write(str(os.getpid()))\n     return True",
+  "ground_truth": {
+   "expected_risk_level": "high",
+   "expected_findings": [
+    {
+     "file": "daemon/lockfile.py",
+     "line": 14,
+     "severity": "error",
+     "message": "TOCTOU race: existence check and create are not atomic, allowing a concurrent process to win the lock."
+    }
+   ],
+   "notes": "Planted TOCTOU: replaced atomic O_EXCL open with check-then-open."
+  }
+ },
+ {
+  "pr_id": "adversarial_004",
+  "title": "Copy buffer into fixed-size frame",
+  "language": "java",
+  "diff": "--- a/src/main/java/com/acme/net/Frame.java\n+++ b/src/main/java/com/acme/net/Frame.java\n@@ -22,7 +22,9 @@ public class Frame {\n \n     void fill(byte[] src, byte[] dst) {\n-        System.arraycopy(src, 0, dst, 0, Math.min(src.length, dst.length));\n+        for (int i = 0; i <= dst.length; i++) {\n+            dst[i] = src[i];\n+        }\n     }\n }",
+  "ground_truth": {
+   "expected_risk_level": "critical",
+   "expected_findings": [
+    {
+     "file": "src/main/java/com/acme/net/Frame.java",
+     "line": 24,
+     "severity": "error",
+     "message": "Off-by-one: i <= dst.length indexes one past the end and throws ArrayIndexOutOfBoundsException."
+    }
+   ],
+   "notes": "Planted off-by-one (<=) causing a certain out-of-bounds throw."
+  }
+ },
+ {
+  "pr_id": "adversarial_005",
+  "title": "Compute total order amount in cents",
+  "language": "java",
+  "diff": "--- a/src/main/java/com/acme/billing/Cart.java\n+++ b/src/main/java/com/acme/billing/Cart.java\n@@ -30,7 +30,9 @@ public class Cart {\n \n     public int totalCents(int unitCents, int quantity) {\n-        return Math.multiplyExact(unitCents, quantity);\n+        int total = unitCents * quantity;\n+        return total;\n     }\n }",
+  "ground_truth": {
+   "expected_risk_level": "high",
+   "expected_findings": [
+    {
+     "file": "src/main/java/com/acme/billing/Cart.java",
+     "line": 32,
+     "severity": "warn",
+     "message": "Integer overflow: int multiplication of price by quantity silently wraps for large carts, corrupting the charged amount."
+    }
+   ],
+   "notes": "Planted integer overflow: replaced multiplyExact with plain int multiply on a money value."
+  }
+ },
+ {
+  "pr_id": "adversarial_006",
+  "title": "Dispatch event payload to handler",
+  "language": "java",
+  "diff": "--- a/src/main/java/com/acme/bus/Dispatcher.java\n+++ b/src/main/java/com/acme/bus/Dispatcher.java\n@@ -41,7 +41,9 @@ public class Dispatcher {\n \n     void dispatch(Object event) {\n-        if (event instanceof OrderEvent oe) handle(oe);\n+        OrderEvent oe = (OrderEvent) event;\n+        handle(oe);\n     }\n }",
+  "ground_truth": {
+   "expected_risk_level": "high",
+   "expected_findings": [
+    {
+     "file": "src/main/java/com/acme/bus/Dispatcher.java",
+     "line": 43,
+     "severity": "warn",
+     "message": "Unchecked cast: a non-OrderEvent payload throws ClassCastException since the instanceof guard was removed."
+    }
+   ],
+   "notes": "Planted unchecked cast: removed instanceof guard before downcasting an arbitrary event."
+  }
+ },
+ {
+  "pr_id": "adversarial_007",
+  "title": "Parse optional retry count from config",
+  "language": "python",
+  "diff": "--- a/config/loader.py\n+++ b/config/loader.py\n@@ -15,7 +15,11 @@ def load_retries(raw):\n-    return int(raw[\"retries\"])\n+    try:\n+        return int(raw[\"retries\"])\n+    except Exception:\n+        pass\n+    return 3",
+  "ground_truth": {
+   "expected_risk_level": "medium",
+   "expected_findings": [
+    {
+     "file": "config/loader.py",
+     "line": 17,
+     "severity": "warn",
+     "message": "Swallowed exception: a broad except that silently falls back hides config typos and masks real errors."
+    }
+   ],
+   "notes": "Planted swallowed exception: bare-ish except Exception with silent pass and fallback."
+  }
+ },
+ {
+  "pr_id": "adversarial_008",
+  "title": "Add admin endpoint to purge cache",
+  "language": "python",
+  "diff": "--- a/api/admin.py\n+++ b/api/admin.py\n@@ -27,6 +27,9 @@ from .app import app\n \n+@app.route(\"/admin/cache/purge\", methods=[\"POST\"])\n+def purge_cache():\n+    cache.clear()\n+    return {\"status\": \"purged\"}, 200\n \n def health():\n     return {\"ok\": True}",
+  "ground_truth": {
+   "expected_risk_level": "high",
+   "expected_findings": [
+    {
+     "file": "api/admin.py",
+     "line": 29,
+     "severity": "error",
+     "message": "Missing authorization: a state-changing admin endpoint has no authentication or role check."
+    }
+   ],
+   "notes": "Planted missing auth check on a privileged admin route."
+  }
+ },
+ {
+  "pr_id": "adversarial_009",
+  "title": "Log authentication attempts for audit",
+  "language": "python",
+  "diff": "--- a/auth/login.py\n+++ b/auth/login.py\n@@ -19,6 +19,8 @@ logger = logging.getLogger(__name__)\n \n def login(username, password):\n+    logger.info(\"login attempt user=%s password=%s\", username, password)\n     user = repo.find(username)\n     return verify(user, password)",
+  "ground_truth": {
+   "expected_risk_level": "high",
+   "expected_findings": [
+    {
+     "file": "auth/login.py",
+     "line": 21,
+     "severity": "error",
+     "message": "Secret in logs: the plaintext password is written to the application log."
+    }
+   ],
+   "notes": "Planted secret-in-log: plaintext password logged at info level."
+  }
+ },
+ {
+  "pr_id": "adversarial_010",
+  "title": "Restore session from request body",
+  "language": "python",
+  "diff": "--- a/web/session.py\n+++ b/web/session.py\n@@ -8,6 +8,9 @@ import pickle\n \n def restore(request):\n-    return None\n+    blob = request.get_data()\n+    state = pickle.loads(blob)\n+    return state",
+  "ground_truth": {
+   "expected_risk_level": "critical",
+   "expected_findings": [
+    {
+     "file": "web/session.py",
+     "line": 11,
+     "severity": "error",
+     "message": "Insecure deserialization: pickle.loads on untrusted request data enables remote code execution."
+    }
+   ],
+   "notes": "Planted insecure deserialization: pickle.loads on attacker-controlled request body."
+  }
+ },
+ {
+  "pr_id": "adversarial_011",
+  "title": "Read N records from a page",
+  "language": "java",
+  "diff": "--- a/src/main/java/com/acme/store/Page.java\n+++ b/src/main/java/com/acme/store/Page.java\n@@ -33,8 +33,10 @@ public class Page {\n \n     List<Record> copyAll(List<Record> all) {\n-        return new ArrayList<>(all);\n+        List<Record> out = new ArrayList<>();\n+        for (int i = 0; i <= all.size(); i++) out.add(all.get(i));\n+        return out;\n     }\n }",
+  "ground_truth": {
+   "expected_risk_level": "critical",
+   "expected_findings": [
+    {
+     "file": "src/main/java/com/acme/store/Page.java",
+     "line": 36,
+     "severity": "error",
+     "message": "Off-by-one: i <= all.size() reads index size() and throws IndexOutOfBoundsException."
+    }
+   ],
+   "notes": "Planted off-by-one (<=) iterating to all.size() inclusive; certain throw."
+  }
+ },
+ {
+  "pr_id": "adversarial_012",
+  "title": "Trim trailing whitespace from labels",
+  "language": "python",
+  "diff": "--- a/ui/labels.py\n+++ b/ui/labels.py\n@@ -4,5 +4,7 @@\n \n def clean_labels(labels):\n-    return labels\n+    return [label.rstrip() for label in labels]",
+  "ground_truth": {
+   "expected_risk_level": "low",
+   "expected_findings": [],
+   "notes": "clean"
+  }
+ },
+ {
+  "pr_id": "adversarial_013",
+  "title": "Expose build version in health response",
+  "language": "java",
+  "diff": "--- a/src/main/java/com/acme/web/HealthController.java\n+++ b/src/main/java/com/acme/web/HealthController.java\n@@ -14,7 +14,9 @@ public class HealthController {\n \n     @GetMapping(\"/health\")\n     public Map<String, String> health() {\n-        return Map.of(\"status\", \"UP\");\n+        return Map.of(\"status\", \"UP\", \"version\", BuildInfo.VERSION);\n     }\n }",
+  "ground_truth": {
+   "expected_risk_level": "low",
+   "expected_findings": [],
+   "notes": "clean"
+  }
+ }
+]

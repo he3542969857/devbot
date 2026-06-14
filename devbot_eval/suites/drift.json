@@ -1,0 +1,56 @@
+[
+ {
+  "pr_id": "drift_001",
+  "title": "Add user lookup by name",
+  "language": "java",
+  "diff": "--- a/src/main/java/com/acme/dao/UserDao.java\n+++ b/src/main/java/com/acme/dao/UserDao.java\n@@ -40,4 +40,9 @@ public class UserDao {\n         }\n     }\n \n+    public User findByName(String name) throws SQLException {\n+        String sql = \"SELECT * FROM users WHERE name = '\" + name + \"'\";\n+        ResultSet rs = connection.createStatement().executeQuery(sql);\n+        return rs.next() ? mapRow(rs) : null;\n+    }\n }",
+  "ground_truth": {
+   "expected_risk_level": "critical",
+   "expected_findings": [
+    {
+     "file": "src/main/java/com/acme/dao/UserDao.java",
+     "line": 44,
+     "severity": "error",
+     "message": "SQL injection: user-supplied name is concatenated directly into the query instead of using a parameterized PreparedStatement."
+    }
+   ],
+   "notes": "Planted SQL injection via string concatenation (Java, variant 1: identifier 'name', SELECT *)."
+  }
+ },
+ {
+  "pr_id": "drift_002",
+  "title": "Implement account lookup endpoint",
+  "language": "java",
+  "diff": "--- a/src/main/java/com/acme/dao/AccountRepository.java\n+++ b/src/main/java/com/acme/dao/AccountRepository.java\n@@ -72,6 +72,9 @@ public class AccountRepository {\n     }\n \n     public Account fetchByLogin(String login) throws SQLException {\n-        return null;\n+        String query = \"SELECT id, balance FROM accounts WHERE login = '\" + login + \"'\";\n+        Statement st = conn.createStatement();\n+        ResultSet result = st.executeQuery(query);\n+        return result.next() ? toAccount(result) : null;\n     }\n }",
+  "ground_truth": {
+   "expected_risk_level": "critical",
+   "expected_findings": [
+    {
+     "file": "src/main/java/com/acme/dao/AccountRepository.java",
+     "line": 75,
+     "severity": "error",
+     "message": "SQL injection: the login parameter is concatenated into the SQL string instead of being bound via a PreparedStatement."
+    }
+   ],
+   "notes": "Planted SQL injection via string concatenation (Java, variant 2: renamed identifiers 'login'/'query', explicit column list, reordered into existing stub method)."
+  }
+ },
+ {
+  "pr_id": "drift_003",
+  "title": "Add customer search by email",
+  "language": "python",
+  "diff": "--- a/app/db/customers.py\n+++ b/app/db/customers.py\n@@ -18,3 +18,8 @@ class CustomerStore:\n         row = cur.fetchone()\n         return row\n \n+    def find_by_email(self, email):\n+        cur = self.conn.cursor()\n+        stmt = \"SELECT * FROM customers WHERE email = '%s'\" % email\n+        cur.execute(stmt)\n+        return cur.fetchone()",
+  "ground_truth": {
+   "expected_risk_level": "critical",
+   "expected_findings": [
+    {
+     "file": "app/db/customers.py",
+     "line": 23,
+     "severity": "error",
+     "message": "SQL injection: the email value is interpolated into the query via %-formatting instead of being passed as a parameter to cursor.execute."
+    }
+   ],
+   "notes": "Planted SQL injection via string formatting (Python, variant 3: language switched to Python and %-interpolation, identifier 'email'; same underlying defect)."
+  }
+ }
+]
