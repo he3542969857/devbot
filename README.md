@@ -2,6 +2,15 @@
 
 > PR 来了用 LangGraph 编排多个 Critic 并行评审 + 沙箱实跑验证，加权定级回写；代码生成、单测生成、需求拆解做成确定性技能流水线，统一注册成一张技能表；经 MCP 接 [CodeDoc](../codedoc) 图谱获取跨仓变更影响。
 
+## 🌐 在线体验 (Live Demo)
+
+- **综合门户**:http://36.213.150.205:8501/platform/
+- **DevBot**:http://36.213.150.205:8502
+- 测试账号:`fctest` / `fctest123`(或自行注册)
+
+> 演示为 http 单实例,可能不定时维护。
+
+
 ## ✨ 特性
 
 - **多 Critic 并行 PR 评审**：LangGraph 扇出四个视角 Critic(正确性/设计/安全/可读性，领域纪律 prompt 保正交)，加权聚合 + 一票否决；跨 Critic 去重 + severity 校准压误报。
