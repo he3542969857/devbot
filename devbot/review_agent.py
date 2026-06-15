@@ -45,6 +45,7 @@ CRITIC_WEIGHTS = {
 VETO_THRESHOLD = 80
 
 # ── 去噪 / 校准参数 ──────────────────────────────────────────────────
+from .findings import dedup_entries, calibrated_confidence as _cc_pure
 _SEVERITY_ORDER = {"error": 3, "warn": 2, "warning": 2, "info": 1}
 _DEDUP_WINDOW = int(os.environ.get("DEVBOT_DEDUP_WINDOW", "3"))
 _CALIBRATE = os.environ.get("DEVBOT_CALIBRATE", "1") == "1"
@@ -130,7 +131,7 @@ def _sigmoid(x: float) -> float:
 
 
 def _calibrated_confidence(risk_score: float) -> float:
-    return round(_sigmoid(_CAL_A * (risk_score / 100.0) + _CAL_B), 4)
+    return _cc_pure(risk_score, _CAL_A, _CAL_B)
 
 
 def _line_close(a, b, w: int) -> bool:
@@ -171,30 +172,10 @@ def _consensus_findings(samples_findings: list[list], min_count: int) -> list[di
 
 def _dedup_findings(results: list[dict[str, Any]]) -> int:
     """跨 Critic 去重:同 file + line±window 聚簇,留最高 severity 一条,写回 critic['findings']。
-    返回去掉的重复数。"""
-    entries: list[tuple[int, dict]] = []
-    for ci, cr in enumerate(results):
-        for f in cr.get("findings", []):
-            if isinstance(f, dict):
-                entries.append((ci, f))
-    used = [False] * len(entries)
-    kept: list[tuple[int, dict]] = []
-    dropped = 0
-    for i, (ci, f) in enumerate(entries):
-        if used[i]:
-            continue
-        cluster = [(i, ci, f)]
-        for j in range(i + 1, len(entries)):
-            if used[j]:
-                continue
-            cj, fj = entries[j]
-            if fj.get("file") == f.get("file") and _line_close(f.get("line"), fj.get("line"), _DEDUP_WINDOW):
-                cluster.append((j, cj, fj))
-        best = max(cluster, key=lambda t: _SEVERITY_ORDER.get((t[2].get("severity") or "info").lower(), 1))
-        for idx, _, _ in cluster:
-            used[idx] = True
-        kept.append((best[1], best[2]))
-        dropped += len(cluster) - 1
+    返回去掉的重复数。纯去重逻辑见 findings.dedup_entries(已单测)。"""
+    entries = [(ci, f) for ci, cr in enumerate(results)
+               for f in cr.get("findings", []) if isinstance(f, dict)]
+    kept, dropped = dedup_entries(entries, _DEDUP_WINDOW)
     new: dict[int, list] = {ci: [] for ci in range(len(results))}
     for ci, f in kept:
         new[ci].append(f)
