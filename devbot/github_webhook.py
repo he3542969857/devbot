@@ -20,7 +20,7 @@ logger = logging.getLogger(__name__)
 _PR_ACTIONS = {"opened", "synchronize", "reopened"}
 
 # Commands users can put in commit messages or PR body
-_CMD_PATTERN = re.compile(r"/(review|ask|gen-test|gen|decompose)")
+_CMD_PATTERN = re.compile(r"/(review|ask|gen-test|gen|decompose|impl|complex|fix)")
 
 
 # ---------------------------------------------------------------------------
@@ -81,17 +81,83 @@ def parse_commands(text: str) -> list[str]:
 
 # webhook 评论命令 -> 技能名(命令经统一技能注册表分发)
 _COMMAND_SKILL = {"review": "review", "gen": "codegen",
-                  "gen-test": "testgen", "decompose": "requirement"}
+                  "gen-test": "testgen", "decompose": "requirement",
+                  "impl": "pr_codegen",            # 需求文档+PR → 接地生成/补全代码
+                  "complex": "complex_codegen",    # 复杂需求 → 多组件生成
+                  "fix": "review_fix"}             # 评审→修复→重评审 循环编排
 
 
 def dispatch_command(command: str, payload: dict) -> dict:
-    """把 webhook 命令(/review /gen /gen-test /decompose)经技能注册表执行——一处分发、与 API 同源。"""
+    """把 webhook 命令(/review /gen /gen-test /decompose /impl /complex)经技能注册表执行——一处分发、与 API 同源。"""
     from .skills import run_skill
     name = _COMMAND_SKILL.get(command.lstrip("/"))
     if not name:
         return {"status": "ignored", "reason": "unknown command: %s" % command}
     return {"status": "ok", "command": command, "skill": name,
             "result": run_skill(name, payload or {})}
+
+
+def _brief_result(result: dict) -> dict:
+    """命令结果摘要(回贴 PR 评论用,避免巨长 body)。"""
+    out = {"status": result.get("status"), "skill": result.get("skill")}
+    r = result.get("result")
+    if isinstance(r, dict):
+        for k in ("verified", "risk_score", "risk_level", "note", "summary",
+                  "repair_rounds", "auto_fixed", "test_count", "coverage"):
+            if k in r:
+                out[k] = r[k]
+    return out
+
+
+async def handle_comment_event(payload: dict[str, Any], cfg: GithubCfg | None = None) -> dict[str, Any]:
+    """处理 PR 评论里的命令(/impl /complex /gen ...):解析命令→构造 payload→dispatch_command→回贴结果。"""
+    cfg = cfg or get_settings().github
+    issue = payload.get("issue") or {}
+    if not issue.get("pull_request"):                       # 只处理 PR 上的评论
+        return {"status": "ignored", "reason": "not a PR comment"}
+    comment = (payload.get("comment") or {}).get("body", "") or ""
+    cmds = parse_commands(comment)
+    if not cmds:
+        return {"status": "ignored", "reason": "no command"}
+
+    repo_full = (payload.get("repository") or {}).get("full_name", "")
+    if "/" not in repo_full:
+        return {"status": "ignored", "reason": "no repo"}
+    owner, repo = repo_full.split("/", 1)
+    pr_number = issue.get("number", 0)
+    cmd = cmds[0]
+    client = GithubClient(cfg)
+
+    # 需求 = 评论文本去掉命令本身;按需拉 PR diff 当上下文
+    requirement = _CMD_PATTERN.sub("", comment).strip()
+    diff = ""
+    try:
+        diff = client.get_pr_diff(owner, repo, pr_number)
+    except Exception:
+        diff = ""
+
+    skill_payload = {
+        "requirement": requirement, "text": requirement, "task": requirement,
+        "description": requirement, "title": issue.get("title", ""),
+        "diff": diff, "pr_id": f"{owner}/{repo}#{pr_number}", "impact_files": [],
+    }
+    try:
+        result = dispatch_command("/" + cmd, skill_payload)
+    except Exception as e:
+        logger.exception("dispatch_command failed")
+        result = {"status": "error", "error": str(e)[:200]}
+
+    try:
+        import json as _json
+        body = "🤖 DevBot `/%s` 执行结果:\n\n```json\n%s\n```" % (
+            cmd, _json.dumps(_brief_result(result), ensure_ascii=False)[:1500])
+        client.post_issue_comment(owner, repo, pr_number, body)
+    except Exception:
+        logger.warning("post comment result failed for %s/%s#%d", owner, repo, pr_number,
+                       exc_info=True)
+
+    return {"status": "dispatched", "command": cmd,
+            "pr": f"{owner}/{repo}#{pr_number}", "result_status": result.get("status")}
 
 
 # ---------------------------------------------------------------------------
@@ -180,6 +246,16 @@ async def handle_pr_event(payload: dict[str, Any], cfg: GithubCfg | None = None)
 
         client.post_review_comment(owner, repo, pr_number, body, findings)
 
+        # 回贴 autofix 修复建议(沙箱验证过的 suggested change);失败不影响评审回写
+        suggestions = getattr(result, "auto_fix_suggestions", []) or []
+        posted_fixes = 0
+        if suggestions:
+            try:
+                posted_fixes = client.post_suggestions(owner, repo, pr_number, suggestions)
+            except Exception:
+                logger.warning("post_suggestions failed for %s/%s#%d", owner, repo, pr_number,
+                               exc_info=True)
+
         # Post final status
         state = "success" if result.risk_score < 70 else "failure"
         client.post_check_status(
@@ -192,6 +268,7 @@ async def handle_pr_event(payload: dict[str, Any], cfg: GithubCfg | None = None)
             "pr": f"{owner}/{repo}#{pr_number}",
             "risk_score": result.risk_score,
             "risk_level": result.risk_level.value,
+            "auto_fixes_posted": posted_fixes,
         }
 
     except Exception as e:

@@ -58,6 +58,10 @@ _PREFILTER = int(os.environ.get("DEVBOT_PREFILTER", "40"))
 _FINDING_RISK_FLOOR = int(os.environ.get("DEVBOT_FINDING_RISK_FLOOR", "35"))
 # 丢掉 info 级 finding:info=提示/建议非缺陷,缺陷一律 error/warn(压投机噪声,不伤缺陷召回)
 _DROP_INFO = os.environ.get("DEVBOT_DROP_INFO", "1") == "1"
+# auto-fix:对高危 finding 产出沙箱验证过的修复建议(codegen 引擎的真实产品形态)。
+# 默认开,但全程 try/except 包住——失败一律降级空,绝不影响评审主流程。
+_AUTOFIX = os.environ.get("DEVBOT_AUTOFIX_ENABLE", "1") == "1"
+_AUTOFIX_SEVERITY = int(os.environ.get("DEVBOT_AUTOFIX_SEVERITY", "7"))
 
 _DISCIPLINE = (
     "\n\n## Reviewer discipline\n"
@@ -343,11 +347,34 @@ def build_review_graph(llm: LlmClient | None = None, codedoc: CodedocClient | No
             summary += " [VETO triggered]"
         summary += f" | deduped {dropped} dup findings"
 
+        # auto-fix:对高危 finding 生成沙箱验证过的修复建议(只贴验证通过的)。
+        # 全程 try/except,失败降级空、绝不影响评审;实际回贴 GitHub suggested change 由 webhook 层做。
+        auto_fix_suggestions: list[dict[str, Any]] = []
+        if _AUTOFIX and all_findings:
+            try:
+                from .review_autofix import auto_fix_review
+                from .auto_fix import Finding as _AFinding, LlmFixGenerator
+                added = extract_added_python(pr.get("diff", ""))
+                if added.strip():
+                    af = [_AFinding(message=f.get("message", ""),
+                                    file=f.get("file", "solution.py") or "solution.py",
+                                    line=int(f.get("line") or 0),
+                                    severity=8 if (f.get("severity") == "error") else 5,
+                                    critic=f.get("critic", ""))
+                          for f in all_findings if isinstance(f, dict)]
+                    afr = auto_fix_review(af, added, "import solution\n",
+                                          LlmFixGenerator(llm, codedoc),
+                                          severity_threshold=_AUTOFIX_SEVERITY)
+                    auto_fix_suggestions = afr.get("suggestions", [])
+            except Exception:
+                auto_fix_suggestions = []
+
         return {"final_output": {
             "pr_id": pr.get("pr_id", ""), "risk_score": final_score, "risk_level": risk_level.value,
             "critics": results, "findings": all_findings, "summary": summary,
             "total_tokens": total_tokens, "total_cost_usd": 0.0, "total_latency_ms": total_latency,
             "exec_check": (state.get("exec_result") or {}),
+            "auto_fix_suggestions": auto_fix_suggestions,
         }}
 
     def exec_check(state: ReviewState) -> dict[str, Any]:
@@ -464,8 +491,14 @@ def review_pr(pr: PRReviewInput, *, llm: LlmClient | None = None,
         )
         for cr in out.get("critics", [])
     ]
-    return PRReviewOutput(
+    out_obj = PRReviewOutput(
         pr_id=out["pr_id"], risk_score=out["risk_score"], risk_level=RiskLevel(out["risk_level"]),
         critics=critics, summary=out.get("summary", ""), total_tokens=out.get("total_tokens", 0),
         total_cost_usd=out.get("total_cost_usd", 0.0), total_latency_ms=out.get("total_latency_ms", 0),
     )
+    # 把 autofix 修复建议挂到返回对象(PRReviewOutput 无此字段,动态附加;失败不影响主结果)
+    try:
+        out_obj.auto_fix_suggestions = out.get("auto_fix_suggestions", []) or []
+    except Exception:
+        pass
+    return out_obj

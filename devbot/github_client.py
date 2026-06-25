@@ -143,6 +143,49 @@ class GithubClient:
 
         self._post(f"/repos/{owner}/{repo}/pulls/{pr_number}/reviews", json=payload)
 
+    def post_suggestions(
+        self,
+        owner: str,
+        repo: str,
+        pr_number: int,
+        suggestions: list[dict[str, Any]] | None = None,
+    ) -> int:
+        """Post sandbox-verified auto-fix suggestions as inline ```suggestion review comments.
+
+        Each suggestion dict has file / line / suggestion(已含 ```suggestion 块)。
+        Returns the number of suggestion comments posted (0 in mock mode)."""
+        comments: list[dict[str, Any]] = []
+        for s in (suggestions or []):
+            if s.get("file") and s.get("line") and s.get("suggestion"):
+                comments.append({
+                    "path": s["file"],
+                    "line": s["line"],
+                    "body": s["suggestion"],
+                })
+        if not comments:
+            return 0
+        if _is_mock(self.cfg):
+            logger.info("mock: would post %d auto-fix suggestion(s) on %s/%s#%d",
+                        len(comments), owner, repo, pr_number)
+            return 0
+
+        self._post(
+            f"/repos/{owner}/{repo}/pulls/{pr_number}/reviews",
+            json={
+                "body": "🤖 DevBot auto-fix — 以下修复均经沙箱验证(不崩/回归通过),可一键采纳:",
+                "event": "COMMENT",
+                "comments": comments,
+            },
+        )
+        return len(comments)
+
+    def post_issue_comment(self, owner: str, repo: str, issue_number: int, body: str) -> None:
+        """Post a plain comment on a PR/issue (用于回贴命令执行结果)。"""
+        if _is_mock(self.cfg):
+            logger.info("mock: would post issue comment on %s/%s#%d", owner, repo, issue_number)
+            return
+        self._post(f"/repos/{owner}/{repo}/issues/{issue_number}/comments", json={"body": body})
+
     def post_check_status(
         self,
         owner: str,

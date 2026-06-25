@@ -24,7 +24,7 @@ import os as _os_pg
 
 PG_DSN = _os_pg.environ.get(
     "DEVPLATFORM_PG_DSN",
-    "host=127.0.0.1 port=5432 dbname=devplatform user=devplatform password=CHANGE_ME_PG_PASSWORD",
+    "host=127.0.0.1 port=5432 dbname=devplatform user=devplatform password=devplatform-pwd-2026",
 )
 
 class _SQLiteCompatCursor:
@@ -115,7 +115,7 @@ from pydantic import BaseModel
 
 from devbot_eval.domain import PRReviewInput
 from ..config import get_settings
-from ..github_webhook import handle_pr_event, verify_signature
+from ..github_webhook import handle_pr_event, handle_comment_event, verify_signature
 from ..review_agent import review_pr
 from ..skills import list_skills, run_skill, SKILLS
 
@@ -937,10 +937,13 @@ async def github_webhook(request: Request):
     if cfg.webhook_secret and cfg.webhook_secret != "dev-secret":
         if not verify_signature(body, sig, cfg.webhook_secret):
             raise HTTPException(403, detail="Invalid webhook signature")
-    if request.headers.get("X-GitHub-Event") != "pull_request":
-        return {"status": "ignored"}
+    event = request.headers.get("X-GitHub-Event")
     payload = await request.json()
-    return await handle_pr_event(payload, cfg)
+    if event == "pull_request":
+        return await handle_pr_event(payload, cfg)
+    if event == "issue_comment":
+        return await handle_comment_event(payload, cfg)
+    return {"status": "ignored"}
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
